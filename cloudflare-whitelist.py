@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Script to whitelist Tor exit IP's on a CloudFlare account
-
-TODO: Do something smarter when rate limit is hit.
-Better logging
 """
 import os
 import sys
 import json
-import time
 import requests
 import argparse
 import logging
@@ -21,10 +17,6 @@ logger = logging.getLogger(__name__)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
-
-# Rate Limit Parameters
-NUM_REQUESTS = 1150  # 1200 request / 5 min
-PERIOD = 5 * 60
 
 CLOUDFLARE_ACCESS_RULE_LIMIT = 200
 
@@ -50,28 +42,6 @@ def retrieve_top_tor_exit_ips(limit=CLOUDFLARE_ACCESS_RULE_LIMIT):
     return list(exit_ips)
 
 
-def rate_limited(max, per_period):
-    """
-    Decorator to delay API requests. Period in seconds
-    """
-    minInterval = float(per_period) / float(max)
-
-    def decorate(func):
-        lastTimeCalled = [0.0]
-
-        def rateLimitedFunction(args, *kargs):
-            elapsed = time.clock() - lastTimeCalled[0]
-            leftToWait = minInterval - elapsed
-            if leftToWait > 0:
-                time.sleep(leftToWait)
-            ret = func(args, *kargs)
-            lastTimeCalled[0] = time.clock()
-            return ret
-        return rateLimitedFunction
-    return decorate
-
-
-@rate_limited(NUM_REQUESTS, PERIOD)
 def add_whitelist_rule(session, ip, zone_id=None):
     """
     Make request to CloudFlare API to whitelist an IP.
@@ -105,7 +75,6 @@ def add_whitelist_rule(session, ip, zone_id=None):
         exit(1)
 
 
-@rate_limited(NUM_REQUESTS, PERIOD)
 def remove_access_rule(session, rule_id):
     """
     Remove an existing access rule via the CloudFlare API
