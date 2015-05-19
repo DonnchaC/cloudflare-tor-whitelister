@@ -1,4 +1,4 @@
-# Automatic CloudFlare Tor Exit Whitelist
+# Automatic CloudFlare Tor Exit Whitelister
 
 CloudFlare provides an external service to defend your site against denial of service attacks. Unfortunately Tor users are often inconvenienced by repeated requests to solve CAPTCHA's due to CloudFlare's threat scoring approach.
 
