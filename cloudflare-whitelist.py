@@ -5,6 +5,7 @@ Script to whitelist Tor exit IP's on a CloudFlare account
 import os
 import sys
 import json
+import copy
 import requests
 import argparse
 import logging
@@ -18,6 +19,11 @@ logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
 
+class CloudFlareAPIError(requests.RequestException):
+    """
+    Exception when CloudFlare request doesn't succeed
+    """
+
 CLOUDFLARE_ACCESS_RULE_LIMIT = 200
 
 
@@ -25,11 +31,11 @@ def retrieve_top_tor_exit_ips(limit=CLOUDFLARE_ACCESS_RULE_LIMIT):
     """
     Retrieve exit information from Onionoo sorted by consensus weight
     """
-    exit_ips = set()
+    exits = {}
     params = {
         'running': True,
         'flag': 'Exit',
-        'fields': 'or_addresses',
+        'fields': 'or_addresses,exit_probability',
         'order': '-consensus_weight',
         'limit': limit
     }
@@ -37,9 +43,34 @@ def retrieve_top_tor_exit_ips(limit=CLOUDFLARE_ACCESS_RULE_LIMIT):
     r.raise_for_status()
     res = r.json()
     for relay in res.get('relays'):
-        or_address = relay.get('or_addresses')[0]
-        exit_ips.add(or_address.split(':')[0])
-    return list(exit_ips)
+        or_address = relay.get('or_addresses')[0].split(':')[0]
+        exit_probability = relay.get('exit_probability', 0.0)
+        # Try calculate combined weight for all relays on each IP
+        exits[or_address] = exits.get(or_address, 0.0) + exit_probability
+    return sorted(exits, key=exits.get, reverse=True)
+
+
+def fetch_access_rules(session, page_num=1, zone_id=None, per_page=50):
+    """
+    Fetch current access rules from the CloudFlare API
+    """
+
+    # If zone_id, only apply rule to current zone/domain
+    params = {'page': page_num, 'per_page': per_page}
+    if zone_id:
+        r = session.get('https://api.cloudflare.com/client/v4/zones/{}'
+                        '/firewall/packages/access_rules/rules'.format(
+                            zone_id), params=params)
+    else:
+        r = session.get('https://api.cloudflare.com/client/v4/user'
+                        '/firewall/packages/access_rules/rules', params=params)
+
+    r.raise_for_status
+    res = r.json()
+    if not res['success']:
+        raise CloudFlareAPIError(res['errors'])
+    else:
+        return(res)
 
 
 def add_whitelist_rule(session, ip, zone_id=None):
@@ -62,26 +93,32 @@ def add_whitelist_rule(session, ip, zone_id=None):
     else:
         # Apply whitelist rules across all domains owned by this user.
         data.update({"group": {"id": "owner"}})
-        r = session.post('https://api.cloudflare.com/client/v4/zones/{}'
-                         '/firewall/packages/access_rules/rules'.format(
-                            zone_id), data=json.dumps(data))
+        r = session.post('https://api.cloudflare.com/client/v4/user'
+                         '/firewall/packages/access_rules/rules',
+                         data=json.dumps(data))
     r.raise_for_status
     res = r.json()
-    if res.get('success'):
-        logger.debug("Successfully white-listed IP %s" % ip)
-        return True
-    else:
-        logger.error("Unknown error occurred: {}".format(res.get('errors')))
-        exit(1)
+    if not res['success']:
+        raise CloudFlareAPIError(res['errors'])
 
 
-def remove_access_rule(session, rule_id):
+def remove_access_rule(session, rule_id, zone_id=None):
     """
     Remove an existing access rule via the CloudFlare API
     """
-    r = session.delete('https://api.cloudflare.com/client/v4/user/firewall/'
-                       'packages/access_rules/rules/{}'.format(rule_id))
+    if zone_id:
+        r = session.delete('https://api.cloudflare.com/client/v4/zones/{}'
+                           '/firewall/packages/access_rules/rules/{}'.format(
+                                zone_id, rule_id))
+    else:
+        # Apply rule across all zones
+        r = session.delete('https://api.cloudflare.com/client/v4/user'
+                           '/firewall/packages/access_rules/rules/{}'.format(
+                                rule_id))
     r.raise_for_status
+    res = r.json()
+    if not res['success']:
+        raise CloudFlareAPIError(res['errors'])
 
 
 def parse_cmd_args():
@@ -94,17 +131,26 @@ def parse_cmd_args():
         "token and email address can also be specified in the environment "
         "variables CLOUDFLARE_API_TOKEN and CLOUDFLARE_EMAIL." % sys.argv[0])
 
-    parser.add_argument("-t", "--token", type=str, required=True,
+    parser.add_argument("-t", "--token", type=str,
                         default=os.environ.get('CLOUDFLARE_API_TOKEN', None),
                         help="CloudFlare API token (available from your "
                              "'My Account' page).")
 
-    parser.add_argument("-e", "--email", required=True,
+    parser.add_argument("-e", "--email", type=str,
                         default=os.environ.get('CLOUDFLARE_EMAIL', None),
                         help="CloudFlare account email address")
 
     parser.add_argument("-z", "--zone", help="Zone (domain) to whitelist. "
-                        "Default is the first enabled zone.")
+                        "Default is to whitelist across all zones owned by "
+                        "your CloudFlare account.")
+
+    parser.add_argument("--clear-rules", action='store_true',
+                        help="Remove all currently active Tor rules")
+
+    parser.add_argument("-v", "--verbosity", type=str, default="info",
+                        help="Minimum verbosity level for logging.  Available "
+                             "in ascending order: debug, info, warning, "
+                             "error, critical).  The default is info.")
 
     return parser.parse_args()
 
@@ -116,6 +162,12 @@ def main():
     args = parse_cmd_args()
     session = requests.session()
 
+    logger.setLevel(logging.__dict__[args.verbosity.upper()])
+
+    if not (args.token or args.email):
+        logger.error('A CloudFlare API token and email must be specified')
+        sys.exit(1)
+
     # Set headers required for each API request
     session.headers.update({
         'Content-Type': 'application/json',
@@ -126,10 +178,17 @@ def main():
     # Make request to test CloudFlare connection.
     try:
         r = session.get('https://api.cloudflare.com/client/v4/user')
-        r.raise_for_status()
         res = r.json()
+        r.raise_for_status()
     except requests.RequestException:
-        logger.exception('Error connecting to CloudFlare account.')
+        if res.get('errors'):
+            # CloudFlare API doesn't give a proper HTTP status code for
+            # incorrect credentials
+            if any(error.get('code') == 9103 for error in res.get('errors')):
+                logger.error("Your Cloudflare API or email address appears "
+                             "to be incorrect.")
+            else:
+                logger.exception("Error connecting to CloudFlare account.")
         sys.exit(1)
 
     else:
@@ -139,77 +198,106 @@ def main():
             logger.error("Error occurred: %s" % res.get('errors'))
             sys.exit(1)
 
-    # Determine Zone/Domain to whitelist.
-    params = {'status': 'active'}
+    # Determine Zone/Domain information if a zone is specified
     if args.zone:
-        params.update({'name': args.zone})
-
-    try:
-        r = session.get('https://api.cloudflare.com/client/v4/zones',
-                        params=params)
-        r.raise_for_status()
-        res = r.json()
-    except requests.RequestException:
-        logger.exception("Error retrieving client zone information")
-        sys.exit(1)
-    else:
-        if res.get('success') and res.get('result'):
-            zone_id = res.get('result')[0].get('id')
-            logger.info("Selected zone '%s'" % res['result'][0].get('name'))
-        else:
-            logger.error("Could not find suitable zone to whitelist")
+        try:
+            r = session.get('https://api.cloudflare.com/client/v4/zones',
+                            params={'status': 'active', 'name': args.zone})
+            r.raise_for_status()
+            res = r.json()
+        except requests.RequestException:
+            logger.exception("Error retrieving client zone information")
             sys.exit(1)
+        else:
+            if res.get('success') and res.get('result'):
+                zone_id = res.get('result')[0]['id']
+                logger.info("Selected zone '%s'" % res['result'][0]['name'])
+            else:
+                logger.error("Could not find the specified domain/zone")
+                sys.exit(1)
+    else:
+        zone_id = None
+        logger.info("No zone specified. Whitelist will be applied across all "
+                    "domains.")
 
-    # Extract current Tor whitelist
+    # Extract currently active Tor whitelist
     tor_rules = {}
-    rules_endpoint = ('https://api.cloudflare.com/client/v4/zones/{}'
-                      '/firewall/packages/access_rules/rules'.format(zone_id))
-    rules = session.get(rules_endpoint, params={'per_page': 50}).json()
+    rules = fetch_access_rules(session, 1, zone_id=zone_id)
     total_rules_count = rules['result_info']['total_count']
 
     # Load currently active rule set by iterating the paginated result
     for page in range(1, rules['result_info']['total_pages'] + 1):
         # Don't request the first page again
         if page is not 1:
-            rules = session.get(rules_endpoint,
-                                params={'per_page': 50, 'page': page}).json()
+            rules = fetch_access_rules(session, page, zone_id=zone_id)
 
         for rule in rules['result']:
             if rule['notes'] == 'tor_exit' and rule['mode'] == 'whitelist':
-                tor_rules[rule['id']] = rule['configuration']['value']
+                # If no zone_id specified, select rules applied to all sites
+                if not zone_id and rule['group']['id'] == 'owner':
+                    tor_rules[rule['id']] = (rule['configuration']['value'])
+                elif zone_id and rule['group']['id'] == 'zone':
+                    tor_rules[rule['id']] = (rule['configuration']['value'])
+                else:
+                    logger.debug('Tor rule {} (IP: {}) did not match '
+                                 'selected zone'.format(
+                                    rule['id'],
+                                    rule['configuration']['value']))
 
     num_tor_rules = len(tor_rules)
-    logger.debug("Found {} existing Tor whitelist access rules".format(
+    logger.debug("Found {} matching Tor access rules".format(
                  num_tor_rules))
+
+    # Remove all the active Tor rules if --clear-rules is specified
+    if args.clear_rules:
+        for rule_id, ip_address in tor_rules.items():
+            try:
+                remove_access_rule(session, rule_id, zone_id)
+            except requests.RequestException:
+                logger.exception('Error deleting access rule {} (IP: {})'
+                                 ''.format(rule_id, ip_address))
+            else:
+                logger.debug('Removed access rule for IP {}'.format(
+                             ip_address))
+        logger.info("Removed {} matching Tor access rules.".format(
+                    num_tor_rules))
+        sys.exit(0)
 
     # Retrieve list of top Tor exits
     try:
-        exit_addresses = retrieve_top_tor_exit_ips()
+        # Retrieve some extra relay IP's, some IP's have multiple fast exits
+        exit_addresses = retrieve_top_tor_exit_ips(
+                         int(CLOUDFLARE_ACCESS_RULE_LIMIT * 1.5))
     except requests.RequestException:
         logger.exception("Error when retrieving Tor exit list")
         sys.exit(1)
     else:
-
         if not exit_addresses:
             logger.error('Did not retrieve any Tor exit IPs from Onionoo')
             sys.exit(1)
         else:
-            logger.debug('Retrieved {} exit IP addresses from Onionoo'.format(
+            logger.info('Retrieved {} exit IP addresses from Onionoo'.format(
                          len(exit_addresses)))
 
     # Calculate the max number of Tor rules that we can insert.
-    max_num_tor_rules = (CLOUDFLARE_ACCESS_RULE_LIMIT + num_tor_rules -
-                         - total_rules_count)
+    max_num_tor_rules = (CLOUDFLARE_ACCESS_RULE_LIMIT -
+                         (total_rules_count - num_tor_rules))
     exit_addresses = exit_addresses[:max_num_tor_rules]
 
+    logger.debug("Can create a maximum of {} access rules".format(
+              max_num_tor_rules))
+
     # Remove all Tor rules that are no longer needed
-    for rule_id, ip_address in tor_rules.items():
+    existing_tor_rules = copy.copy(tor_rules)
+    for rule_id, ip_address in existing_tor_rules.items():
         if ip_address not in exit_addresses:
             try:
-                remove_access_rule(session, rule_id)
+                remove_access_rule(session, rule_id, zone_id)
             except requests.RequestException:
-                logger.exception('Error deleting access rule.')
+                logger.exception('Error deleting access rule {} (IP: {})'
+                                 ''.format(rule_id, ip_address))
             else:
+                del tor_rules[rule_id]
                 logger.debug('Removed access rule for IP {}'.format(
                              ip_address))
 
@@ -228,14 +316,10 @@ def main():
                              exit_address))
 
     # Confirm number of rules
-    rules = session.get(rules_endpoint).json()
-    rules['result_info']['total_count']
-
-    num_tor_rules = (rules['result_info']['total_count'] -
-                     (total_rules_count - num_tor_rules))
+    num_tor_rules = (len(tor_rules) + num_rules_added)
 
     logger.info("Done! Added {} new rules. There are now {} Tor exit relay "
-                "whitelist rules".format(num_rules_added, num_tor_rules))
+                "rules".format(num_rules_added, num_tor_rules))
     sys.exit(0)
 
 if __name__ == '__main__':
