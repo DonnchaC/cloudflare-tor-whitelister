@@ -318,8 +318,18 @@ def main():
             # Rule for this exit does not already exist, insert it
             try:
                 add_whitelist_rule(session, exit_address, zone_id)
-            except requests.RequestException:
-                logger.exception('Error creating access rule.')
+            except CloudFlareAPIError as errors:
+                if any(error.get('code') == 81019 for error in errors.args[0]):
+                    # Hit the access rule limit
+                    logger.error(
+                        'Cloudflare access rule quota has been exceeded: You '
+                        'may be trying to add more access rules than your '
+                        'account currently allows. Please check the '
+                        '--rule-limit option.')
+                    break
+                else:
+                    logger.exception('Unknown error creating access rule.')
+                    raise
             else:
                 num_rules_added += 1
                 logger.debug("Added whitelist rule for IP {}".format(
