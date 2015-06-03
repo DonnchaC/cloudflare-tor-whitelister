@@ -5,7 +5,6 @@ Script to whitelist Tor exit IP's on a CloudFlare account
 import os
 import sys
 import json
-import copy
 import requests
 import argparse
 import logging
@@ -288,8 +287,8 @@ def main():
               max_num_tor_rules))
 
     # Remove all Tor rules that are no longer needed
-    existing_tor_rules = copy.copy(tor_rules)
-    for rule_id, ip_address in existing_tor_rules.items():
+    for rule_id in list(tor_rules.keys()):
+        ip_address = tor_rules[rule_id]
         if ip_address not in exit_addresses:
             try:
                 remove_access_rule(session, rule_id, zone_id)
