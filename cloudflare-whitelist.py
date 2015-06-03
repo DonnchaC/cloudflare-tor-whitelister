@@ -128,7 +128,12 @@ def parse_cmd_args():
     parser = argparse.ArgumentParser(
         description="%s whitelists Tor exit IP's on CloudFlare. The API "
         "token and email address can also be specified in the environment "
-        "variables CLOUDFLARE_API_TOKEN and CLOUDFLARE_EMAIL." % sys.argv[0])
+        "variables CLOUDFLARE_API_TOKEN and CLOUDFLARE_EMAIL." % sys.argv[0],
+        epilog="Cloudflare limits the number of access rules on your "
+        "account depending on your account level and number of domains. "
+        "The addition of a second domain a free CloudFlare account should "
+        "allow for up to 400 rules. With a Pro account you should be able to "
+        "add up to 1000 access rules rules.")
 
     parser.add_argument("-t", "--token", type=str,
                         default=os.environ.get('CLOUDFLARE_API_TOKEN', None),
@@ -150,6 +155,12 @@ def parse_cmd_args():
                         help="Minimum verbosity level for logging.  Available "
                              "in ascending order: debug, info, warning, "
                              "error, critical).  The default is info.")
+
+    parser.add_argument("--rule-limit", type=int,
+                        default=CLOUDFLARE_ACCESS_RULE_LIMIT,
+                        help="Maximum number of access rules which can be "
+                        "added to your CloudFlare account. "
+                        "(default: %(default)s)")
 
     return parser.parse_args()
 
@@ -266,7 +277,7 @@ def main():
     try:
         # Retrieve some extra relay IP's, some IP's have multiple fast exits
         exit_addresses = retrieve_top_tor_exit_ips(
-                         int(CLOUDFLARE_ACCESS_RULE_LIMIT * 1.5))
+                         int(args.rule_limit * 1.5))
     except requests.RequestException:
         logger.exception("Error when retrieving Tor exit list")
         sys.exit(1)
@@ -279,7 +290,7 @@ def main():
                          len(exit_addresses)))
 
     # Calculate the max number of Tor rules that we can insert.
-    max_num_tor_rules = (CLOUDFLARE_ACCESS_RULE_LIMIT -
+    max_num_tor_rules = (args.rule_limit -
                          (total_rules_count - num_tor_rules))
     exit_addresses = exit_addresses[:max_num_tor_rules]
 
