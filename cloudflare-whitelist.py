@@ -149,7 +149,9 @@ def parse_cmd_args():
                         "your CloudFlare account.")
 
     parser.add_argument("--clear-rules", action='store_true',
-                        help="Remove all currently active Tor rules")
+                        help="Remove all currently active Tor rules. Must be "
+                        "run for each zone if rules are specifed per zone/"
+                        "domain.")
 
     parser.add_argument("-v", "--verbosity", type=str, default="info",
                         help="Minimum verbosity level for logging.  Available "
