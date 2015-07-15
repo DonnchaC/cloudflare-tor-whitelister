@@ -16,7 +16,7 @@ def read(*names, **kwargs):
 
 
 setup(
-    name="CloudFlare Tor Whitelister",
+    name="cloudflare-tor-whitelister",
     packages=["cfwhitelist"],
     entry_points={
         "console_scripts": [

@@ -5,7 +5,7 @@ CloudFlare provides an external service to defend your site against denial of se
 
 CloudFlare does not currently provide a means of allowing Tor visitors. Website operators should be able to take advantage of the increased stability and DoS resistance that CloudFlare provides without blocking their anonymous users.
 
-On the [tor-talk](https://lists.torproject.org/pipermail/tor-talk/2015-May/037815.html) mailing list, Moritz Bartl proposed the idea that operators could explicitly white list Tor exit IP addresses in their control panel as a stop-gap measure to avoid blocking their users.
+On the `\[tor\-talk\] <https://lists.torproject.org/pipermail/tor-talk/2015-May/037815.html>`_ mailing list, Moritz Bartl proposed the idea that operators could explicitly white list Tor exit IP addresses in their control panel as a stop-gap measure to avoid blocking their users.
 
 This script is a rough proof-of-concept which whitelist's Tor exit IP addresses via the CloudFlare REST API. Problematically CloudFlare currently enforces a maximum limit of 200 access rules per user or zone. However the top 200 Tor exit IP addresses currently represent ~95% of the exit probability. as such using this should still significantly reduce the user experience for Tor users.
 
