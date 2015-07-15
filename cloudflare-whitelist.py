@@ -38,7 +38,7 @@ def retrieve_top_tor_exit_ips(limit=CLOUDFLARE_ACCESS_RULE_LIMIT):
         'order': '-consensus_weight',
         'limit': limit
     }
-    r = requests.get("https://onionoo.torproject.org/details", params=params)
+    r = requests.get("https://onionoo.thecthulhu.com/details", params=params)
     r.raise_for_status()
     res = r.json()
     for relay in res.get('relays'):
@@ -63,13 +63,12 @@ def fetch_access_rules(session, page_num=1, zone_id=None, per_page=50):
     else:
         r = session.get('https://api.cloudflare.com/client/v4/user'
                         '/firewall/access_rules/rules', params=params)
-
-    r.raise_for_status
+    r.raise_for_status()
     res = r.json()
     if not res['success']:
         raise CloudFlareAPIError(res['errors'])
     else:
-        return(res)
+        return res
 
 
 def add_whitelist_rule(session, ip, zone_id=None):
@@ -88,14 +87,14 @@ def add_whitelist_rule(session, ip, zone_id=None):
         data.update({"group": {"id": "zone"}})
         r = session.post('https://api.cloudflare.com/client/v4/zones/{}'
                          '/firewall/access_rules/rules'.format(
-                            zone_id), data=json.dumps(data))
+                             zone_id), data=json.dumps(data))
     else:
         # Apply whitelist rules across all domains owned by this user.
         data.update({"group": {"id": "owner"}})
         r = session.post('https://api.cloudflare.com/client/v4/user'
                          '/firewall/access_rules/rules',
                          data=json.dumps(data))
-    r.raise_for_status
+    r.raise_for_status()
     res = r.json()
     if not res['success']:
         raise CloudFlareAPIError(res['errors'])
@@ -108,13 +107,13 @@ def remove_access_rule(session, rule_id, zone_id=None):
     if zone_id:
         r = session.delete('https://api.cloudflare.com/client/v4/zones/{}'
                            '/firewall/access_rules/rules/{}'.format(
-                                zone_id, rule_id))
+                               zone_id, rule_id))
     else:
         # Apply rule across all zones
         r = session.delete('https://api.cloudflare.com/client/v4/user'
                            '/firewall/access_rules/rules/{}'.format(
-                                rule_id))
-    r.raise_for_status
+                               rule_id))
+    r.raise_for_status()
     res = r.json()
     if not res['success']:
         raise CloudFlareAPIError(res['errors'])
@@ -207,7 +206,7 @@ def main():
         if res.get('success'):
             logger.info("Successfully authenticated to the CloudFlare API")
         else:
-            logger.error("Error occurred: %s" % res.get('errors'))
+            logger.error("Error occurred: %s", res.get('errors'))
             sys.exit(1)
 
     # Determine Zone/Domain information if a zone is specified
@@ -223,7 +222,7 @@ def main():
         else:
             if res.get('success') and res.get('result'):
                 zone_id = res.get('result')[0]['id']
-                logger.info("Selected zone '%s'" % res['result'][0]['name'])
+                logger.info("Selected zone '%s'", res['result'][0]['name'])
             else:
                 logger.error("Could not find the specified domain/zone")
                 sys.exit(1)
@@ -251,14 +250,12 @@ def main():
                 elif zone_id and rule['scope']['type'] == 'zone':
                     tor_rules[rule['id']] = (rule['configuration']['value'])
                 else:
-                    logger.debug('Tor rule {} (IP: {}) did not match '
-                                 'selected zone'.format(
-                                    rule['id'],
-                                    rule['configuration']['value']))
+                    logger.debug('Tor rule %s (IP: %s) did not match '
+                                 'selected zone', rule['id'],
+                                 rule['configuration']['value'])
 
     num_tor_rules = len(tor_rules)
-    logger.debug("Found {} matching Tor access rules".format(
-                 num_tor_rules))
+    logger.debug("Found %d matching Tor access rules", num_tor_rules)
 
     # Remove all the active Tor rules if --clear-rules is specified
     if args.clear_rules:
@@ -266,20 +263,17 @@ def main():
             try:
                 remove_access_rule(session, rule_id, zone_id)
             except requests.RequestException:
-                logger.exception('Error deleting access rule {} (IP: {})'
-                                 ''.format(rule_id, ip_address))
+                logger.exception('Error deleting access rule %s (IP: %s)',
+                                 rule_id, ip_address)
             else:
-                logger.debug('Removed access rule for IP {}'.format(
-                             ip_address))
-        logger.info("Removed {} matching Tor access rules.".format(
-                    num_tor_rules))
+                logger.debug('Removed access rule for IP %s', ip_address)
+        logger.info("Removed %d matching Tor access rules.", num_tor_rules)
         sys.exit(0)
 
     # Retrieve list of top Tor exits
     try:
         # Retrieve some extra relay IP's, some IP's have multiple fast exits
-        exit_addresses = retrieve_top_tor_exit_ips(
-                         int(args.rule_limit * 1.5))
+        exit_addresses = retrieve_top_tor_exit_ips(int(args.rule_limit * 1.5))
     except requests.RequestException:
         logger.exception("Error when retrieving Tor exit list")
         sys.exit(1)
@@ -288,16 +282,15 @@ def main():
             logger.error('Did not retrieve any Tor exit IPs from Onionoo')
             sys.exit(1)
         else:
-            logger.info('Retrieved {} exit IP addresses from Onionoo'.format(
-                         len(exit_addresses)))
+            logger.info('Retrieved %d exit IP addresses from Onionoo',
+                        len(exit_addresses))
 
     # Calculate the max number of Tor rules that we can insert.
     max_num_tor_rules = (args.rule_limit -
                          (total_rules_count - num_tor_rules))
     exit_addresses = exit_addresses[:max_num_tor_rules]
 
-    logger.debug("Can create a maximum of {} access rules".format(
-              max_num_tor_rules))
+    logger.debug("Can create a maximum of %d access rules", max_num_tor_rules)
 
     # Remove all Tor rules that are no longer needed
     for rule_id in list(tor_rules.keys()):
@@ -306,12 +299,11 @@ def main():
             try:
                 remove_access_rule(session, rule_id, zone_id)
             except requests.RequestException:
-                logger.exception('Error deleting access rule {} (IP: {})'
-                                 ''.format(rule_id, ip_address))
+                logger.exception('Error deleting access rule %s (IP: %s)',
+                                 rule_id, ip_address)
             else:
                 del tor_rules[rule_id]
-                logger.debug('Removed access rule for IP {}'.format(
-                             ip_address))
+                logger.debug('Removed access rule for IP %s', ip_address)
 
     # Insert new rules
     num_rules_added = 0
@@ -334,14 +326,13 @@ def main():
                     raise
             else:
                 num_rules_added += 1
-                logger.debug("Added whitelist rule for IP {}".format(
-                             exit_address))
+                logger.debug("Added whitelist rule for IP %s", exit_address)
 
     # Confirm number of rules
     num_tor_rules = (len(tor_rules) + num_rules_added)
 
-    logger.info("Done! Added {} new rules. There are now {} Tor exit relay "
-                "rules".format(num_rules_added, num_tor_rules))
+    logger.info("Done! Added %d new rules. There are now %d Tor exit relay "
+                "rules", num_rules_added, num_tor_rules)
     sys.exit(0)
 
 if __name__ == '__main__':
