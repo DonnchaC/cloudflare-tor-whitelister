@@ -125,9 +125,10 @@ def parse_cmd_args():
     """
 
     parser = argparse.ArgumentParser(
-        description="%s whitelists Tor exit IP's on CloudFlare. The API "
-        "token and email address can also be specified in the environment "
-        "variables CLOUDFLARE_API_TOKEN and CLOUDFLARE_EMAIL." % sys.argv[0],
+        description="cloudflare-whitelist whitelists Tor exit IP's on "
+        "CloudFlare. The API token and email address can also be specified "
+        "in the environment variables CLOUDFLARE_API_TOKEN and "
+        "CLOUDFLARE_EMAIL.",
         epilog="Cloudflare limits the number of access rules on your "
         "account depending on your account level and number of domains. "
         "The addition of a second domain a free CloudFlare account should "
