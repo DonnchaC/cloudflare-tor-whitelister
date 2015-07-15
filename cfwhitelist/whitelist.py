@@ -38,7 +38,7 @@ def retrieve_top_tor_exit_ips(limit=CLOUDFLARE_ACCESS_RULE_LIMIT):
         'order': '-consensus_weight',
         'limit': limit
     }
-    r = requests.get("https://onionoo.thecthulhu.com/details", params=params)
+    r = requests.get("https://onionoo.torproject.org/details", params=params)
     r.raise_for_status()
     res = r.json()
     for relay in res.get('relays'):
