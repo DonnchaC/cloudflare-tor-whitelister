@@ -58,11 +58,11 @@ def fetch_access_rules(session, page_num=1, zone_id=None, per_page=50):
     params = {'page': page_num, 'per_page': per_page}
     if zone_id:
         r = session.get('https://api.cloudflare.com/client/v4/zones/{}'
-                        '/firewall/packages/access_rules/rules'.format(
+                        '/firewall/access_rules/rules'.format(
                             zone_id), params=params)
     else:
         r = session.get('https://api.cloudflare.com/client/v4/user'
-                        '/firewall/packages/access_rules/rules', params=params)
+                        '/firewall/access_rules/rules', params=params)
 
     r.raise_for_status
     res = r.json()
@@ -87,13 +87,13 @@ def add_whitelist_rule(session, ip, zone_id=None):
     if zone_id:
         data.update({"group": {"id": "zone"}})
         r = session.post('https://api.cloudflare.com/client/v4/zones/{}'
-                         '/firewall/packages/access_rules/rules'.format(
+                         '/firewall/access_rules/rules'.format(
                             zone_id), data=json.dumps(data))
     else:
         # Apply whitelist rules across all domains owned by this user.
         data.update({"group": {"id": "owner"}})
         r = session.post('https://api.cloudflare.com/client/v4/user'
-                         '/firewall/packages/access_rules/rules',
+                         '/firewall/access_rules/rules',
                          data=json.dumps(data))
     r.raise_for_status
     res = r.json()
@@ -107,12 +107,12 @@ def remove_access_rule(session, rule_id, zone_id=None):
     """
     if zone_id:
         r = session.delete('https://api.cloudflare.com/client/v4/zones/{}'
-                           '/firewall/packages/access_rules/rules/{}'.format(
+                           '/firewall/access_rules/rules/{}'.format(
                                 zone_id, rule_id))
     else:
         # Apply rule across all zones
         r = session.delete('https://api.cloudflare.com/client/v4/user'
-                           '/firewall/packages/access_rules/rules/{}'.format(
+                           '/firewall/access_rules/rules/{}'.format(
                                 rule_id))
     r.raise_for_status
     res = r.json()
@@ -244,9 +244,9 @@ def main():
         for rule in rules['result']:
             if rule['notes'] == 'tor_exit' and rule['mode'] == 'whitelist':
                 # If no zone_id specified, select rules applied to all sites
-                if not zone_id and rule['group']['id'] == 'owner':
+                if not zone_id and rule['scope']['type'] == 'user':
                     tor_rules[rule['id']] = (rule['configuration']['value'])
-                elif zone_id and rule['group']['id'] == 'zone':
+                elif zone_id and rule['scope']['type'] == 'zone':
                     tor_rules[rule['id']] = (rule['configuration']['value'])
                 else:
                     logger.debug('Tor rule {} (IP: {}) did not match '
