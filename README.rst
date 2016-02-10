@@ -30,3 +30,8 @@ Your CloudFlare API token and email can also be specified in the environment var
 By default the whitelist rules are applied across all zones owned by your account. If instead you would like to only whitelist on a particular domain you should specify it with the --zone option.
 
 It is probably sufficient to run this script via `cron` once per day.
+
+::
+    $ crontab -e
+
+    0 0 * * * cloudflare-whitelist -t 'API_TOKEN' -e 'CLOUDFLARE_EMAIL'
