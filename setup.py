@@ -25,7 +25,7 @@ setup(
     description="Cloudflare Whitelister allows site owners to explicitly "
     "allow Tor users access there site without being impeded by CAPTCHAs ",
     long_description=read("README.rst"),
-    version="0.1.0",
+    version="0.1.1",
     author="Donncha O'Cearbhail",
     author_email="donncha@donncha.is",
     url="https://github.com/DonnchaC/cloudflare-tor-whitelister",

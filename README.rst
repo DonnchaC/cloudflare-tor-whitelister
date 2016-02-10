@@ -16,7 +16,7 @@ Installation
 
 ::
 
-    $ pip install cloudflare-whitelist
+    $ pip install cloudflare-tor-whitelister
 
 Usage
 -----
