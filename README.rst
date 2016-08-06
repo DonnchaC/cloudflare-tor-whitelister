@@ -1,6 +1,12 @@
 Automatic CloudFlare Tor Exit Whitelister
 =========================================
 
+----------
+
+**Important Update:** Cloudflare now allows website operators to whitelist Tor relays directly in your CloudFlare control panel. This tool is no longer necessary. Please see the `CloudFlare blog <https://support.cloudflare.com/hc/en-us/articles/203306930-Does-CloudFlare-block-Tor>`_ for more information.
+
+----------
+
 CloudFlare provides an external service to defend your site against denial of service attacks. Unfortunately Tor users are often inconvenienced by repeated requests to solve CAPTCHA's due to CloudFlare's threat scoring approach.
 
 CloudFlare does not currently provide a means of allowing Tor visitors. Website operators should be able to take advantage of the increased stability and DoS resistance that CloudFlare provides without blocking their anonymous users.
